@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sacramento Race Tracker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: header line, one row of three leg cards (swim / bike / run), map fills the rest */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --fg:#14201d; --muted:#5c6b67; --line:#d5dddb;
+  --swim:#1f6fd1; --bike:#c27a00; --run:#d2423a; --you:#0e9f6e; --warn:#b45309;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1514; --surface:#18211f; --fg:#e8efed; --muted:#93a39f; --line:#2a3633;
+  --swim:#5aa2ff; --bike:#f2a91c; --run:#ff6b5e; --you:#34d399; --warn:#fbbf24; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1514; --surface:#18211f; --fg:#e8efed; --muted:#93a39f; --line:#2a3633;
+  --swim:#5aa2ff; --bike:#f2a91c; --run:#ff6b5e; --you:#34d399; --warn:#fbbf24; color-scheme:dark}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 var(--body);display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));box-sizing:border-box}
+header{padding-block:14px 10px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+h1{margin:0;font:700 26px/1.05 var(--display);text-wrap:balance}
+#fresh{font-size:12px;color:var(--muted)} #fresh.warn{color:var(--warn);font-weight:700}
+.legs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.leg{background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:10px 12px;min-width:0}
+.leg.active{box-shadow:0 0 0 2px var(--c)}
+.leg.pending{opacity:.6}
+.leg h2{margin:0;font:600 13px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--c);display:flex;justify-content:space-between;gap:4px}
+.leg b{display:block;margin-top:6px;font:700 clamp(20px,6vw,30px)/1 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leg span{display:block;margin-top:4px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.prog{height:5px;margin-top:8px;border-radius:9px;background:var(--line);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--c)}
+#swim{--c:var(--swim)} #bike{--c:var(--bike)} #run{--c:var(--run)}
+#map{flex:1;min-height:320px;margin-block:10px max(16px,env(safe-area-inset-bottom,0px));border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.note{font-size:13px;color:var(--muted);margin:8px 0 0}
+form{display:flex;gap:8px;margin-top:8px} input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
+button{font:700 14px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:8px 12px;border:0;border-radius:8px;background:var(--fg);color:var(--bg);cursor:pointer}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--you);outline-offset:2px}
+.results a{display:block;color:var(--fg);padding:6px 0;border-bottom:1px solid var(--line);text-decoration:none}
+.you-dot{width:20px;height:20px;border-radius:50%;background:var(--you);border:3px solid #fff;box-shadow:0 0 0 2px var(--you)}
+@media (prefers-reduced-motion:no-preference){.you-dot{animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--you) 70%,transparent)}100%{box-shadow:0 0 0 16px transparent}}}
+.leaflet-container{font:inherit}
+.leaflet-tile-pane{filter:var(--tiles)}
+:root{--tiles:saturate(.6)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--tiles:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}}
+:root[data-theme="dark"]{--tiles:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}
+</style>
+</head>
+<body>
+<header><h1 id="name">Loading…</h1><div id="fresh">Connecting to live timing…</div></header>
+<div id="search" hidden></div>
+<section class="legs" id="legs" aria-label="Race progress">
+  <div class="leg pending" id="swim"><h2>Swim</h2><b>—</b><span>2.4 mi</span></div>
+  <div class="leg pending" id="bike"><h2>Bike</h2><b>—</b><span>112 mi</span></div>
+  <div class="leg pending" id="run"><h2>Run</h2><b>—</b><span>26.2 mi</span></div>
+</section>
+<div id="map" role="img" aria-label="Course map with her current position"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="core.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const API = q.get("api") || "https://api.rtrt.me", APPID = "5824c5c948fd08c23a8b4567";
+const EVENT = q.get("event") || "IRM-CALIFORNIA-2026";
+const PID = q.get("pid");
+const REPLAY = q.has("replay");            // ?replay&speed=60 plays a past race back in fast-forward
+const SPEED = +q.get("speed") || 60;
+const POLL_MS = +q.get("poll") || 30000;
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---- RTRT ----
+let token = null;
+async function post(path, params) {
+  const body = new URLSearchParams({ appid: APPID, token, ...params });
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 20000);
+  try { return await (await fetch(`${API}/${path}`, { method: "POST", body, signal: ctl.signal })).json(); }
+  finally { clearTimeout(t); }
+}
+async function register() {
+  try { token = token || localStorage.getItem("rtrt_token"); } catch {}
+  if (!token) token = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, "");
+  await post("publicconf", { event: EVENT, web: 1, version: "8.3.0", lang_app: APPID, tracker_ver: 3 });
+  try { localStorage.setItem("rtrt_token", token); } catch {}
+}
+async function api(path, params = {}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const d = await post(path, params);
+    const e = d && d.error;
+    if (!e) return d;
+    if (e.type === "no_results") return { list: [] };
+    if ((e.type === "not_authorized" || e.type === "no_token") && attempt === 0) {
+      token = null; try { localStorage.removeItem("rtrt_token"); } catch {}
+      await register(); continue;
+    }
+    throw new Error(e.msg || e.type);
+  }
+}
+const getSplits = () => api(`events/${EVENT}/profiles/${PID}/splits`, { max: 100 }).then(d => d.list || []);
+
+// ---- map ----
+let course, core, map = null, matLayer, youMarker = null, doneLine = null, lastPassedKey = null;
+let legBounds = {}, framed = null, userMoved = false;
+function frameLeg(st) {
+  if (!map || userMoved) return;
+  const leg = !st ? "all" : st.finished ? "run" : st.nextSeg === "transition" ? (st.mile < core.legsGeom.bike_start ? "bike" : "run") : st.nextSeg;
+  if (leg === framed || !legBounds[leg]) return;
+  framed = leg;
+  map.fitBounds(legBounds[leg], { padding: [24, 24], animate: false });
+}
+function initMap() {
+  if (typeof L === "undefined") { $("map").innerHTML = `<p class="note" style="padding:16px">The map couldn't load. The cards above still update.</p>`; return; }
+  map = L.map("map", { zoomControl: true });
+  // OpenStreetMap's own tiles: no key needed (CARTO's now require one). Dark mode inverts them in CSS.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · timing RTRT.me'
+  }).addTo(map);
+  const all = [];
+  const G = core.legsGeom;
+  for (const [s, a, b] of [["swim", 0, G.swim_end], ["bike", G.bike_start, G.bike_end], ["run", G.run_start, G.finish + 1]]) {
+    const pts = course.route.filter(p => p[2] >= a && p[2] <= b).map(p => [p[0], p[1]]);
+    all.push(...pts);
+    legBounds[s] = L.latLngBounds(pts);
+    L.polyline(pts, { color: css("--" + s), weight: 4, opacity: .55 }).addTo(map);
+  }
+  legBounds.all = L.latLngBounds(all);
+  map.fitBounds(legBounds.all, { padding: [20, 20] });
+  // once someone pans or zooms by hand, stop auto-framing her current leg
+  for (const ev of ["mousedown", "touchstart", "wheel", "keydown"]) $("map").addEventListener(ev, () => { userMoved = true; }, { passive: true });
+  matLayer = L.layerGroup().addTo(map);
+  new ResizeObserver(() => map.invalidateSize()).observe($("map"));
+}
+function drawMats(passed) {
+  if (!map) return;
+  const key = [...passed].sort().join();
+  if (key === lastPassedKey) return;
+  lastPassedKey = key;
+  matLayer.clearLayers();
+  for (const m of core.mats) {
+    const p = passed.has(m.name), c = css("--" + (m.segment === "transition" ? "fg" : m.segment));
+    L.circleMarker([m.lat, m.lng], { radius: p ? 5 : 3.5, weight: 2, color: c, fillColor: p ? c : css("--surface"), fillOpacity: 1 })
+      .bindTooltip(`${esc(m.label.split("|")[0].trim())} · mi ${(+m.miles).toFixed(1)}`).addTo(matLayer);
+  }
+}
+function drawYou(mile) {
+  if (!map) return;
+  const pos = core.pointAtMile(mile);
+  if (!youMarker) youMarker = L.marker(pos, { icon: L.divIcon({ className: "", html: '<div class="you-dot"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }), zIndexOffset: 1000, keyboard: false }).addTo(map);
+  youMarker.setLatLng(pos);
+  const done = course.route.filter(p => p[2] <= mile).map(p => [p[0], p[1]]);
+  done.push(pos);
+  if (doneLine) doneLine.setLatLngs(done); else doneLine = L.polyline(done, { color: css("--you"), weight: 6 }).addTo(map);
+}
+
+// ---- cards ----
+const clock = s => new Date(s * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" });
+const dur = s => { if (!(s > 0)) return "—"; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+const mmss = s => s > 0 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`.replace(/:60$/, ":59") : "—";
+const ago = s => s < 90 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min ago`;
+
+function card(id, html, state, pct) {
+  const el = $(id);
+  el.className = "leg " + state;
+  el.innerHTML = html + (pct != null ? `<div class="prog"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : "");
+}
+function renderLegs(L) {
+  const s = L.swim, b = L.bike, r = L.run;
+  const head = (n, done) => `<h2>${n}${done ? "<em aria-label=done style='font-style:normal'>✓</em>" : ""}</h2>`;
+  // swim: just start / finished
+  if (s.state === "done") card("swim", `${head("Swim", 1)}<b>${dur(s.secs)}</b><span>${s.pace100m ? mmss(s.pace100m) + " /100m" : "finished"}</span>`, "done");
+  else if (s.state === "active") card("swim", `${head("Swim")}<b>In water</b><span>since ${clock(s.startedAt)}</span>`, "active");
+  else card("swim", `${head("Swim")}<b>—</b><span>not started</span>`, "pending");
+  for (const [id, n, leg, total, rate] of [
+    ["bike", "Bike", b, 112, l => l.mph ? `${l.mph.toFixed(1)} mph avg` : "avg after 1st mat"],
+    ["run", "Run", r, 26.2, l => l.minPerMile ? `${mmss(l.minPerMile * 60)} /mi avg` : "avg after 1st mat"]]) {
+    if (leg.state === "done") card(id, `${head(n, 1)}<b>${dur(leg.secs)}</b><span>${leg.mph ? leg.mph.toFixed(1) + " mph avg" : leg.minPerMile ? mmss(leg.minPerMile * 60) + " /mi avg" : "finished"}</span>`, "done", 100);
+    else if (leg.state === "active") card(id, `${head(n)}<b>${leg.miles.toFixed(1)}<small style="font-size:.55em"> mi</small></b><span>of ${total} · ${rate(leg)}</span>`, "active", leg.miles / total * 100);
+    else if (leg.state === "transition") card(id, `${head(n)}<b>${id === "bike" ? "T1" : "T2"}</b><span>in transition</span>`, "active");
+    else card(id, `${head(n)}<b>—</b><span>${total} mi</span>`, "pending");
+  }
+}
+
+let profile = null, splits = [], lastOk = 0;
+function renderFresh(st, nowWall) {
+  const f = $("fresh");
+  let txt, warn = false;
+  if (REPLAY) txt = `Replay of a past race at ${SPEED}×`;
+  else if (!lastOk) txt = "Connecting to live timing…";
+  else if (nowWall - lastOk > POLL_MS / 1000 * 3) { txt = `Can't reach live timing · last update ${ago(nowWall - lastOk)}`; warn = true; }
+  else txt = `Live · updated ${ago(nowWall - lastOk)}`;
+  if (st && st.finished) txt = `Finished at ${st.last.timeOfDay || ""} 🎉 · ` + txt;
+  else if (st && st.lateBy > 1200) { txt = `Due at ${esc(st.next.label.split("|")[0].trim())} ${clock(st.etaNext)}; mats can miss a read · ` + txt; }
+  f.textContent = txt; f.className = warn ? "warn" : "";
+}
+function render(nowSec, nowWall = Date.now() / 1000) {
+  $("name").textContent = profile && profile.name ? profile.name : "Athlete";
+  const { st, legs } = core.legs(splits, nowSec);
+  renderLegs(legs);
+  drawMats(new Set(st ? st.seen.map(s => s.point) : []));
+  if (st) drawYou(st.mile);
+  frameLeg(st);
+  renderFresh(st, nowWall);
+}
+
+// ---- athlete search (no ?pid) ----
+function searchUI() {
+  $("name").textContent = "Find an athlete";
+  $("fresh").textContent = "";
+  const box = $("search"); box.hidden = false;
+  box.innerHTML = `<form id="f"><input id="qn" placeholder="Last name or bib" aria-label="Last name or bib"><button>Search</button></form><div class="results" id="res"></div>`;
+  $("f").onsubmit = async e => {
+    e.preventDefault();
+    const v = $("qn").value.trim();
+    if (!v) return;
+    try {
+      const d = await api(`events/${EVENT}/profiles`, { search: v, max: 20 });
+      $("res").innerHTML = (d.list || []).map(p =>
+        `<a href="?pid=${encodeURIComponent(p.pid)}${EVENT !== "IRM-CALIFORNIA-2026" ? "&event=" + encodeURIComponent(EVENT) : ""}">${esc(p.name)} · ${esc(p.race || "")} ${p.bib ? "· #" + esc(p.bib) : ""}</a>`).join("")
+        || `<p class="note">No athletes found.</p>`;
+    } catch (err) { $("res").innerHTML = `<p class="note">Search failed (${esc(err.message)}). Try again.</p>`; }
+  };
+}
+
+// ---- boot: keep retrying until the course and RTRT are reachable ----
+async function retry(what, fn) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      $("fresh").textContent = `Connecting to ${what}… (attempt ${i + 1})`; $("fresh").className = "warn";
+      await sleep(Math.min(30000, 3000 * (i + 1)));
+    }
+  }
+}
+(async () => {
+  course = await retry("the course map", () => fetch(`courses/${encodeURIComponent(EVENT)}.json`).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }));
+  core = TrackerCore.createCore(course);
+  initMap();
+  drawMats(new Set());
+  await retry("live timing", register);
+  if (!PID) return searchUI();
+  profile = await retry("live timing", async () => { const p = await api(`events/${EVENT}/profiles/${PID}`); return p.list ? p.list[0] || {} : p; });
+  if (REPLAY) {
+    splits = await retry("live timing", getSplits);
+    lastOk = Date.now() / 1000;
+    const ts = splits.map(s => +s.epochTime).filter(isFinite);
+    const t0 = ts.length ? Math.min(...ts) - 120 : 0, wall0 = Date.now() / 1000;
+    const tick = () => { lastOk = Date.now() / 1000; render(t0 + (Date.now() / 1000 - wall0) * SPEED); };
+    tick(); setInterval(tick, 1000);
+    return;
+  }
+  const poll = async () => { try { splits = await getSplits(); lastOk = Date.now() / 1000; } catch {} };
+  await poll();
+  render(Date.now() / 1000);
+  setInterval(poll, POLL_MS);
+  setInterval(() => render(Date.now() / 1000), 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll().then(() => render(Date.now() / 1000)); });
+})();
+</script>
+</body>
+</html>
