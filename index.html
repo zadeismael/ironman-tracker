@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Sacramento Race Tracker</title>
+<title>Mika's Ironman Tracker</title>
+<meta property="og:title" content="Mika's Ironman Tracker">
+<meta property="og:description" content="Follow Mikaela live at IRONMAN California · Sun Oct 18, Sacramento">
+<meta property="og:type" content="website">
+<meta name="description" content="Follow Mikaela live at IRONMAN California · Sun Oct 18, Sacramento">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
@@ -37,6 +41,8 @@ h1{margin:0;font:700 26px/1.05 var(--display);text-wrap:balance}
 .prog{height:5px;margin-top:8px;border-radius:9px;background:var(--line);overflow:hidden}
 .prog i{display:block;height:100%;background:var(--c)}
 #swim{--c:var(--swim)} #bike{--c:var(--bike)} #run{--c:var(--run)}
+.leg .proj{margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--muted)}
+.leg .proj strong{color:var(--fg);font-weight:700}
 #map{flex:1;min-height:320px;margin-block:10px max(16px,env(safe-area-inset-bottom,0px));border-radius:12px;border:1px solid var(--line);background:var(--surface)}
 .note{font-size:13px;color:var(--muted);margin:8px 0 0}
 form{display:flex;gap:8px;margin-top:8px} input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
@@ -168,25 +174,37 @@ const dur = s => { if (!(s > 0)) return "—"; s = Math.round(s); const h = Math
 const mmss = s => s > 0 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`.replace(/:60$/, ":59") : "—";
 const ago = s => s < 90 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min ago`;
 
-function card(id, html, state, pct) {
+// her projected leg times
+const PROJ = { swim: 3600, bike: 6 * 3600, run: 6 * 3600 };
+function projLine(id, leg) {
+  const p = PROJ[id], base = `Projected <strong>${dur(p)}</strong>`;
+  if (leg.state === "done" && leg.secs > 0) {
+    const d = leg.secs - p;
+    return `${base} · ${dur(Math.abs(d))} ${d <= 0 ? "faster" : "slower"}`;
+  }
+  if (leg.state === "active" && leg.startedAt) return `${base} · done ~${clock(leg.startedAt + p)}`;
+  return base;
+}
+function card(id, html, state, pct, leg) {
   const el = $(id);
   el.className = "leg " + state;
-  el.innerHTML = html + (pct != null ? `<div class="prog"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : "");
+  el.innerHTML = html + (pct != null ? `<div class="prog"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : "")
+    + `<div class="proj">${projLine(id, leg || {})}</div>`;
 }
 function renderLegs(L) {
   const s = L.swim, b = L.bike, r = L.run;
   const head = (n, done) => `<h2>${n}${done ? "<em aria-label=done style='font-style:normal'>✓</em>" : ""}</h2>`;
   // swim: just start / finished
-  if (s.state === "done") card("swim", `${head("Swim", 1)}<b>${dur(s.secs)}</b><span>${s.pace100m ? mmss(s.pace100m) + " /100m" : "finished"}</span>`, "done");
-  else if (s.state === "active") card("swim", `${head("Swim")}<b>In water</b><span>since ${clock(s.startedAt)}</span>`, "active");
-  else card("swim", `${head("Swim")}<b>—</b><span>not started</span>`, "pending");
+  if (s.state === "done") card("swim", `${head("Swim", 1)}<b>${dur(s.secs)}</b><span>${s.pace100m ? mmss(s.pace100m) + " /100m" : "finished"}</span>`, "done", null, s);
+  else if (s.state === "active") card("swim", `${head("Swim")}<b>In water</b><span>since ${clock(s.startedAt)} · ${dur(s.since)} in</span>`, "active", null, s);
+  else card("swim", `${head("Swim")}<b>—</b><span>2.4 mi</span>`, "pending", null, s);
   for (const [id, n, leg, total, rate] of [
     ["bike", "Bike", b, 112, l => l.mph ? `${l.mph.toFixed(1)} mph avg` : "avg after 1st mat"],
     ["run", "Run", r, 26.2, l => l.minPerMile ? `${mmss(l.minPerMile * 60)} /mi avg` : "avg after 1st mat"]]) {
-    if (leg.state === "done") card(id, `${head(n, 1)}<b>${dur(leg.secs)}</b><span>${leg.mph ? leg.mph.toFixed(1) + " mph avg" : leg.minPerMile ? mmss(leg.minPerMile * 60) + " /mi avg" : "finished"}</span>`, "done", 100);
-    else if (leg.state === "active") card(id, `${head(n)}<b>${leg.miles.toFixed(1)}<small style="font-size:.55em"> mi</small></b><span>of ${total} · ${rate(leg)}</span>`, "active", leg.miles / total * 100);
-    else if (leg.state === "transition") card(id, `${head(n)}<b>${id === "bike" ? "T1" : "T2"}</b><span>in transition</span>`, "active");
-    else card(id, `${head(n)}<b>—</b><span>${total} mi</span>`, "pending");
+    if (leg.state === "done") card(id, `${head(n, 1)}<b>${dur(leg.secs)}</b><span>${leg.mph ? leg.mph.toFixed(1) + " mph avg" : leg.minPerMile ? mmss(leg.minPerMile * 60) + " /mi avg" : "finished"}</span>`, "done", 100, leg);
+    else if (leg.state === "active") card(id, `${head(n)}<b>${leg.miles.toFixed(1)}<small style="font-size:.55em"> mi</small></b><span>of ${total} · ${rate(leg)}</span>`, "active", leg.miles / total * 100, leg);
+    else if (leg.state === "transition") card(id, `${head(n)}<b>${id === "bike" ? "T1" : "T2"}</b><span>in transition</span>`, "active", null, leg);
+    else card(id, `${head(n)}<b>—</b><span>${total} mi</span>`, "pending", null, leg);
   }
 }
 
