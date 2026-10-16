@@ -175,7 +175,7 @@ const mmss = s => s > 0 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).pa
 const ago = s => s < 90 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min ago`;
 
 // her projected leg times
-const PROJ = { swim: 3600, bike: 6 * 3600, run: 6 * 3600 };
+const PROJ = { swim: 75 * 60, bike: 6.5 * 3600, run: 6 * 3600 };
 function projLine(id, leg) {
   const p = PROJ[id], base = `Projected <strong>${dur(p)}</strong>`;
   if (leg.state === "done" && leg.secs > 0) {
