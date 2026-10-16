@@ -77,6 +77,7 @@ const API = q.get("api") || "https://api.rtrt.me", APPID = "5824c5c948fd08c23a8b
 const EVENT = q.get("event") || "IRM-CALIFORNIA-2026";
 const PID = q.get("pid");
 const REPLAY = q.has("replay");            // ?replay&speed=60 plays a past race back in fast-forward
+const DEMO = q.get("demo");                // ?demo=swim|t1|bike|t2|run|finish: simulated race, no live data
 const SPEED = +q.get("speed") || 60;
 const POLL_MS = +q.get("poll") || 30000;
 const $ = id => document.getElementById(id);
@@ -212,7 +213,8 @@ let profile = null, splits = [], lastOk = 0;
 function renderFresh(st, nowWall) {
   const f = $("fresh");
   let txt, warn = false;
-  if (REPLAY) txt = `Replay of a past race at ${SPEED}×`;
+  if (DEMO) { txt = `DEMO · simulated race, not live`; warn = true; }
+  else if (REPLAY) txt = `Replay of a past race at ${SPEED}×`;
   else if (!lastOk) txt = "Connecting to live timing…";
   else if (nowWall - lastOk > POLL_MS / 1000 * 3) { txt = `Can't reach live timing · last update ${ago(nowWall - lastOk)}`; warn = true; }
   else txt = `Live · updated ${ago(nowWall - lastOk)}`;
@@ -264,6 +266,15 @@ async function retry(what, fn) {
   core = TrackerCore.createCore(course);
   initMap();
   drawMats(new Set());
+  if (DEMO) {                              // simulated race, runs in real time from the chosen moment
+    await new Promise((ok, fail) => { const s = document.createElement("script"); s.src = "demo.js"; s.onload = ok; s.onerror = fail; document.head.appendChild(s); });
+    const d = TrackerDemo.build(course, DEMO, PROJ);
+    profile = { name: "Mikaela Matera-Vatnick" }; splits = d.splits; lastOk = Date.now() / 1000;
+    const wall0 = Date.now() / 1000;
+    const tick = () => { lastOk = Date.now() / 1000; render(d.now + (Date.now() / 1000 - wall0)); };
+    tick(); setInterval(tick, 5000);
+    return;
+  }
   await retry("live timing", register);
   if (!PID) return searchUI();
   profile = await retry("live timing", async () => { const p = await api(`events/${EVENT}/profiles/${PID}`); return p.list ? p.list[0] || {} : p; });
