@@ -37,6 +37,11 @@ body{background:var(--bg);color:var(--fg);font:15px/1.4 var(--body);display:flex
 .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgb(0 0 0/.62))}
 h1{position:absolute;z-index:1;left:14px;right:14px;bottom:10px;margin:0;color:#fff;font:700 clamp(24px,6.5vw,34px)/1.05 var(--display);text-wrap:balance;text-shadow:0 1px 8px rgb(0 0 0/.45)}
 #fresh{padding-block:8px;font-size:12px;color:var(--muted)} #fresh.warn{color:var(--warn);font-weight:700}
+/* page tabs, shared look with the Road to IRONMAN page */
+.tabs{display:flex;gap:4px;margin-top:12px;padding:4px;border-radius:12px;background:var(--line)}
+.tabs a{flex:1;text-align:center;font:700 13px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;padding:10px 8px;border-radius:9px;color:var(--muted);text-decoration:none}
+.tabs a[aria-current="page"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgb(0 0 0/.15)}
+.tabs a:focus-visible{outline:2px solid var(--you);outline-offset:2px}
 .legs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .leg{background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:10px 12px;min-width:0}
 .leg.active{box-shadow:0 0 0 2px var(--c)}
@@ -51,10 +56,8 @@ h1{position:absolute;z-index:1;left:14px;right:14px;bottom:10px;margin:0;color:#
 .leg .proj strong{color:var(--fg);font-weight:700}
 #map{flex:1;min-height:320px;margin-block:10px max(16px,env(safe-area-inset-bottom,0px));border-radius:12px;border:1px solid var(--line);background:var(--surface)}
 .note{font-size:13px;color:var(--muted);margin:8px 0 0}
-form{display:flex;gap:8px;margin-top:8px} input{flex:1;min-width:0;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
 button{font:700 14px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:8px 12px;border:0;border-radius:8px;background:var(--fg);color:var(--bg);cursor:pointer}
 button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--you);outline-offset:2px}
-.results a{display:block;color:var(--fg);padding:6px 0;border-bottom:1px solid var(--line);text-decoration:none}
 .you-dot{width:20px;height:20px;border-radius:50%;background:var(--you);border:3px solid #fff;box-shadow:0 0 0 2px var(--you)}
 @media (prefers-reduced-motion:no-preference){.you-dot{animation:pulse 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--you) 70%,transparent)}100%{box-shadow:0 0 0 16px transparent}}}
@@ -81,9 +84,9 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 </style>
 </head>
 <body>
+<nav class="tabs" aria-label="Pages"><a href="./?pid=RHAXLDGY" aria-current="page">Live Tracking</a><a href="wrapped/">Road to IRONMAN</a></nav>
 <header class="hero"><img src="images/banner.jpg" alt="Mika riding her bike on a country road" width="1600" height="900"><h1 id="name">Loading…</h1></header>
 <div id="fresh">Connecting to live timing…</div>
-<div id="search" hidden></div>
 <section class="legs" id="legs" aria-label="Race progress">
   <div class="leg pending" id="swim"><h2>Swim</h2><b>—</b><span>2.4 mi</span></div>
   <div class="leg pending" id="bike"><h2>Bike</h2><b>—</b><span>112 mi</span></div>
@@ -97,7 +100,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 const q = new URLSearchParams(location.search);
 const API = q.get("api") || "https://api.rtrt.me", APPID = "5824c5c948fd08c23a8b4567";
 const EVENT = q.get("event") || "IRM-CALIFORNIA-2026";
-const PID = q.get("pid");
+const PID = q.get("pid") || "RHAXLDGY";   // Mika; ?pid= only overrides it for testing
 const REPLAY = q.has("replay");            // ?replay&speed=60 plays a past race back in fast-forward
 const SPEED = +q.get("speed") || 60;
 const POLL_MS = +q.get("poll") || 30000;
@@ -323,25 +326,6 @@ function render(nowSec, nowWall = Date.now() / 1000) {
   renderWatch(nowSec);
 }
 
-// ---- athlete search (no ?pid) ----
-function searchUI() {
-  $("name").textContent = "Find an athlete";
-  $("fresh").textContent = "";
-  const box = $("search"); box.hidden = false;
-  box.innerHTML = `<form id="f"><input id="qn" placeholder="Last name or bib" aria-label="Last name or bib"><button>Search</button></form><div class="results" id="res"></div>`;
-  $("f").onsubmit = async e => {
-    e.preventDefault();
-    const v = $("qn").value.trim();
-    if (!v) return;
-    try {
-      const d = await api(`events/${EVENT}/profiles`, { search: v, max: 20 });
-      $("res").innerHTML = (d.list || []).map(p =>
-        `<a href="?pid=${encodeURIComponent(p.pid)}${EVENT !== "IRM-CALIFORNIA-2026" ? "&event=" + encodeURIComponent(EVENT) : ""}">${esc(p.name)} · ${esc(p.race || "")} ${p.bib ? "· #" + esc(p.bib) : ""}</a>`).join("")
-        || `<p class="note">No athletes found.</p>`;
-    } catch (err) { $("res").innerHTML = `<p class="note">Search failed (${esc(err.message)}). Try again.</p>`; }
-  };
-}
-
 // ---- boot: keep retrying until the course and RTRT are reachable ----
 async function retry(what, fn) {
   for (let i = 0; ; i++) {
@@ -359,7 +343,6 @@ async function retry(what, fn) {
   initWatch();
   drawMats(new Set());
   await retry("live timing", register);
-  if (!PID) return searchUI();
   profile = await retry("live timing", async () => { const p = await api(`events/${EVENT}/profiles/${PID}`); return p.list ? p.list[0] || {} : p; });
   if (REPLAY) {
     splits = await retry("live timing", getSplits);
