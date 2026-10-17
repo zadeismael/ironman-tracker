@@ -59,6 +59,21 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 @media (prefers-reduced-motion:no-preference){.you-dot{animation:pulse 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--you) 70%,transparent)}100%{box-shadow:0 0 0 16px transparent}}}
 .leaflet-container{font:inherit}
+.watch-btn{font:700 13px var(--display);letter-spacing:.08em;text-transform:uppercase;padding:8px 12px;border:0;border-radius:8px;background:var(--fg);color:var(--bg);cursor:pointer;box-shadow:0 1px 5px rgb(0 0 0/.3)}
+.watch-btn[aria-pressed="true"]{background:var(--you)}
+.watch{position:absolute;z-index:800;top:52px;right:10px;width:min(330px,calc(100% - 20px));max-height:calc(100% - 52px - 30px);overflow:auto;
+  background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgb(0 0 0/.22);padding:10px 12px;cursor:auto}
+@media (max-width:600px){.watch{top:auto;bottom:24px;left:8px;right:8px;width:auto;max-height:50%}}
+.watch h3{margin:0 0 2px;font:700 18px/1.1 var(--display)}
+.watch .hint{margin:0 0 6px;font-size:11.5px;color:var(--muted)}
+.watch .spot{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:7px 0;border-top:1px solid var(--line)}
+.watch .n{display:grid;place-items:center;width:24px;height:24px;border-radius:12px;color:#fff;font:700 14px var(--display)}
+.watch .nm{font-weight:700;font-size:13px;margin-bottom:2px}
+.watch .ps{display:flex;gap:8px;font-size:12.5px;color:var(--muted);padding:1px 0}
+.watch .ps b{flex:0 0 62px;color:var(--fg);font-variant-numeric:tabular-nums}
+.watch .ps.passed{opacity:.5} .watch .ps.passed b{text-decoration:line-through}
+.watch .ps.next b{color:var(--you)} .watch .ps.next{color:var(--fg);font-weight:700}
+.watch-pin{position:absolute;transform:translate(-50%,-50%);display:grid;place-items:center;width:26px;height:26px;border-radius:13px;color:#fff;font:700 15px var(--display);border:2px solid #fff;box-shadow:0 1px 4px rgb(0 0 0/.45)}
 .leaflet-tile-pane{filter:var(--tiles)}
 :root{--tiles:saturate(.6)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--tiles:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5)}}
@@ -174,6 +189,75 @@ function drawYou(mile) {
   if (doneLine) doneLine.setLatLngs(done); else doneLine = L.polyline(done, { color: css("--you"), weight: 6 }).addTo(map);
 }
 
+// ---- where to watch: 4 spectator spots, every pass, times from her real splits + projected pace ----
+const START_GUESS = 1792332600;            // 7:10 am PDT race morning, until her START mat says otherwise
+const WATCH = [
+  { n: 1, name: "Swim exit (River Walk)", at: [38.582607, -121.508241], col: "var(--swim)", off: [30, -26],
+    passes: [[2.40, "Out of the water"]] },
+  { n: 2, name: "Transition exit (Riverfront St & Ballpark Dr)", at: [38.579897, -121.511533], col: "var(--bike)", off: [-34, 22],
+    passes: [[2.76, "Rides out on the bike"], [58.76, "Bike turnaround, mile 56"], [114.80, "Bike finish"]] },
+  { n: 3, name: "Run hub: Riverfront St by Tower Bridge", at: [38.580771, -121.510024], col: "var(--run)", off: [34, 24],
+    passes: [[114.956, "Starts the run, heading south"], [119.653, "Back from the south, heading north"],
+             [125.338, "Back from the north, over the bridge"], [130.366, "Lap 1 done, short loop south"],
+             [131.555, "Back from the short loop, north"], [137.24, "Last time by, heading to the finish"]] },
+  { n: 4, name: "Finish line (Capitol Mall & 5th)", at: [38.578466, -121.500018], col: "var(--fg)", off: [-28, -24],
+    passes: [[141.04, "FINISH (leave the hub ~25 min before)"]] },
+];
+let watchOpen = false, watchPanel = null, watchLayer = null, watchFramed = false;
+try { watchOpen = localStorage.getItem("watch") === "1"; } catch {}
+function initWatch() {
+  if (!map) return;
+  const Btn = L.Control.extend({ options: { position: "topright" }, onAdd() {
+    const b = L.DomUtil.create("button", "watch-btn");
+    b.id = "watchBtn"; b.type = "button"; b.textContent = "Where to watch";
+    L.DomEvent.disableClickPropagation(b);
+    b.onclick = () => {
+      watchOpen = !watchOpen;
+      try { localStorage.setItem("watch", watchOpen ? "1" : "0"); } catch {}
+      renderWatch();
+      if (!watchOpen) { userMoved = false; framed = null; render(watchNow ?? Date.now() / 1000); }
+    };
+    return b; } });
+  new Btn().addTo(map);
+  watchPanel = L.DomUtil.create("div", "watch", $("map"));
+  watchPanel.id = "watchPanel";
+  watchPanel.hidden = true;
+  L.DomEvent.disableClickPropagation(watchPanel); L.DomEvent.disableScrollPropagation(watchPanel);
+  watchLayer = L.layerGroup();
+  for (const s of WATCH) {
+    const [dx, dy] = s.off;
+    L.circleMarker(s.at, { radius: 5, color: "#fff", weight: 2, fillColor: css("--fg"), fillOpacity: 1 }).addTo(watchLayer);
+    L.marker(s.at, { keyboard: false, interactive: false, icon: L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [0, 0],
+      html: `<svg style="position:absolute;overflow:visible" width="1" height="1"><line x1="0" y1="0" x2="${dx}" y2="${dy}" stroke="${css("--fg")}" stroke-width="1.5"/></svg>`
+          + `<span class="watch-pin" style="left:${dx}px;top:${dy}px;background:${s.col}">${s.n}</span>` }) }).addTo(watchLayer);
+  }
+}
+// zoom to the four spots, leaving room for the panel (side on desktop, bottom sheet on phones)
+function frameWatch() {
+  userMoved = true;                        // stop auto-framing her leg while the panel is open
+  const phone = $("map").clientWidth <= 600, r = watchPanel.getBoundingClientRect();
+  map.fitBounds(L.latLngBounds(WATCH.map(s => s.at)), phone
+    ? { paddingTopLeft: [40, 70], paddingBottomRight: [40, r.height + 50], maxZoom: 15, animate: false }
+    : { paddingTopLeft: [80, 80], paddingBottomRight: [r.width + 60, 80], maxZoom: 15, animate: false });
+}
+let watchNow = null;
+function renderWatch(nowSec = watchNow) {
+  if (!watchPanel) return;
+  watchNow = nowSec;
+  $("watchBtn").setAttribute("aria-pressed", watchOpen);
+  watchPanel.hidden = !watchOpen;
+  if (!watchOpen) { watchLayer.remove(); watchFramed = false; return; }
+  watchLayer.addTo(map);
+  const proj = { swim: PROJ.swim, t1: 300, bike: PROJ.bike, t2: 300, run: PROJ.run };
+  const all = WATCH.map(s => ({ s, times: core.passTimes(splits, nowSec ?? Date.now() / 1000, s.passes.map(p => p[0]), proj, START_GUESS) }));
+  const future = all.flatMap(x => x.times.filter(t => !t.passed)).sort((a, b) => a.t - b.t)[0];
+  watchPanel.innerHTML = `<h3>Where to watch</h3><p class="hint">Every time she passes each spot. Updates from her real splits; crossed out = already passed.</p>`
+    + all.map(({ s, times }) => `<div class="spot"><span class="n" style="background:${s.col}">${s.n}</span><div><div class="nm">${s.name}</div>`
+      + times.map((t, i) => `<div class="ps${t.passed ? " passed" : t === future ? " next" : ""}"><b>${t.passed ? "" : "~"}${clock(t.t)}</b><span>${s.passes[i][1]}${t === future ? " · next" : ""}</span></div>`).join("")
+      + `</div></div>`).join("");
+  if (!watchFramed) { watchFramed = true; frameWatch(); }   // after content so the panel size is known
+}
+
 // ---- cards ----
 const clock = s => new Date(s * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" });
 const dur = s => { if (!(s > 0)) return "—"; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
@@ -187,7 +271,8 @@ function projLine(id, leg) {
   const p = PROJ[id], base = `Projected <strong>${dur(p)}</strong>`;
   if (leg.state === "done" && leg.secs > 0) {
     const d = leg.secs - p;
-    return `${base} · ${dur(Math.abs(d))} ${d <= 0 ? "faster" : "slower"}`;
+    if (Math.abs(d) < 60) return `${base} · right on projection`;
+    return `${base} · ${dur(Math.abs(d))} ${d < 0 ? "faster" : "slower"}`;
   }
   if (leg.state === "active" && leg.startedAt) return `${base} · done ~${clock(leg.startedAt + p)}`;
   return base;
@@ -235,6 +320,7 @@ function render(nowSec, nowWall = Date.now() / 1000) {
   if (st) drawYou(st.mile);
   frameLeg(st);
   renderFresh(st, nowWall);
+  renderWatch(nowSec);
 }
 
 // ---- athlete search (no ?pid) ----
@@ -270,6 +356,7 @@ async function retry(what, fn) {
   course = await retry("the course map", () => fetch(`courses/${encodeURIComponent(EVENT)}.json`).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }));
   core = TrackerCore.createCore(course);
   initMap();
+  initWatch();
   drawMats(new Set());
   await retry("live timing", register);
   if (!PID) return searchUI();
