@@ -31,6 +31,11 @@ main{max-width:820px;margin:0 auto;display:grid;gap:16px}
 .banner img{display:block;width:100%;height:auto}
 .intro{display:grid;gap:14px;align-content:start;min-width:0}
 @media (min-width:760px){.top{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center}}
+/* page tabs, shared look with the Live Tracking page */
+.tabs{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--line)}
+.tabs a{flex:1;text-align:center;font:700 13px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;padding:10px 8px;border-radius:9px;color:var(--muted);text-decoration:none}
+.tabs a[aria-current="page"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgb(0 0 0/.15)}
+.tabs a:focus-visible{outline:2px solid var(--swim);outline-offset:2px}
 .eyebrow{font:700 13px/1 var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 h1{margin:6px 0 4px;font:800 clamp(40px,10vw,68px)/.92 var(--display);letter-spacing:-.01em;text-wrap:balance}
 .lede{margin:0;color:var(--muted);max-width:56ch}
@@ -71,6 +76,7 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:11px}
 </head>
 <body>
 <main>
+  <nav class="tabs" aria-label="Pages"><a href="../?pid=RHAXLDGY">Live Tracking</a><a href="./" aria-current="page">Road to IRONMAN</a></nav>
   <section class="top">
     <div class="banner"><img src="images/bike-group.jpg" alt="Mika with two friends and their bikes before a ride" width="1100" height="1467"></div>
     <div class="intro">
