@@ -122,7 +122,26 @@
     }
     function parsePace100(p) { const m = /(\d+):(\d+)/.exec(p || ""); return m ? +m[1] * 60 + +m[2] : null; }
 
-    return { mats, matByName, legsGeom: G, FINISH_MI, segOf, pointAtMile, mileOf, estimate, legs };
+    // When will she pass these course miles? Passed miles come from her actual splits; future ones
+    // start from her last real mat and add her projected leg paces (proj in seconds per leg).
+    function passTimes(splits, nowSec, miles, proj, startGuess) {
+      const st = estimate(splits, nowSec);
+      const segs = [[0, G.swim_end, proj.swim], [G.swim_end, G.bike_start, proj.t1], [G.bike_start, G.bike_end, proj.bike],
+                    [G.bike_end, G.run_start, proj.t2], [G.run_start, FINISH_MI, proj.run]];
+      const dur = (a, b) => segs.reduce((s, [x, y, d]) => { const lo = Math.max(a, x), hi = Math.min(b, y); return hi > lo ? s + (hi - lo) / (y - x) * d : s; }, 0);
+      const anchorMi = st ? mileOf(st.last) : 0, anchorT = st ? +st.last.epochTime : startGuess;
+      return miles.map(m => {
+        if (st && m <= anchorMi + 1e-6) {
+          let a = st.seen[0], b = null;
+          for (const s of st.seen) { if (mileOf(s) <= m) a = s; else { b = s; break; } }
+          const t = b ? +a.epochTime + (m - mileOf(a)) / ((mileOf(b) - mileOf(a)) || 1) * (+b.epochTime - +a.epochTime) : +a.epochTime;
+          return { mile: m, t, passed: true };
+        }
+        return { mile: m, t: anchorT + dur(anchorMi, m), passed: !!st && (st.finished || m <= st.mile) };
+      });
+    }
+
+    return { mats, matByName, legsGeom: G, FINISH_MI, segOf, pointAtMile, mileOf, estimate, legs, passTimes };
   }
 
   const api = { createCore, DEFAULT_MPH };
